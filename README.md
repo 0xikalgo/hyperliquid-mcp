@@ -23,7 +23,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Then install the MCP server:
 
 ```bash
-cargo install hyperliquid-mcp
+cargo install hyperliquid -- hyperliquid-mcp
 ```
 
 **2. Configure your wallet** — create `~/.config/hyperliquid-mcp/.env` with your **main wallet** private key:
@@ -90,6 +90,12 @@ Edit `~/.cursor/mcp.json`:
 ```
 
 </details>
+
+You may need to symlink `hyperliquid-mcp` if your client cannot connect to the MCP.
+
+```bash
+$ sudo ln -s ~/.cargo/bin/hyperliquid-mcp /usr/local/bin/hyperliquid-mcp
+```
 
 **4. Start trading** — ask Claude things like *"What are the top Hyperliquid markets?"* or *"Buy 0.01 BTC at $85,000"*.
 
