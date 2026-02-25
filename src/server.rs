@@ -6,7 +6,7 @@ use rmcp::{
 };
 
 use crate::state::ServerState;
-use crate::tools::{account, market, trading, transfer};
+use crate::tools::{account, market, trading, transfer, vault};
 
 #[derive(Clone)]
 pub struct HyperliquidMcp {
@@ -248,24 +248,59 @@ impl HyperliquidMcp {
     async fn check_builder_fee(&self) -> Result<CallToolResult, McpError> {
         transfer::check_builder_fee(&self.state).await
     }
+
+    #[tool(
+        name = "get_vault_details",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
+    async fn get_vault_details(
+        &self,
+        Parameters(req): Parameters<vault::GetVaultDetailsRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        vault::get_vault_details(&self.state, req).await
+    }
+
+    /// WARNING: Closes ALL positions and cancels ALL orders immediately.
+    #[tool(
+        name = "emergency_close_all",
+        annotations(read_only_hint = false, destructive_hint = true)
+    )]
+    async fn emergency_close_all(
+        &self,
+        Parameters(req): Parameters<vault::EmergencyCloseAllRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        vault::emergency_close_all(&self.state, req).await
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for HyperliquidMcp {
     fn get_info(&self) -> ServerInfo {
+        let instructions = if let Some(vault) = self.state.vault_address {
+            format!(
+                "Hyperliquid MCP Server — operating in VAULT MODE. \
+                 Vault address: {:#x}. All trades execute on the vault. \
+                 Use get_vault_details to check vault state. \
+                 Use emergency_close_all to close all positions in an emergency. \
+                 WARNING: Trading tools execute real trades with real vault funds. \
+                 Always confirm trade details before executing.",
+                vault,
+            )
+        } else {
+            "Hyperliquid MCP Server — trade perpetual futures and spot assets on Hyperliquid. \
+             Use market data tools to check prices, order books, and funding rates. \
+             Use account tools to view positions, balances, and trade history. \
+             Use trading tools to place, modify, and cancel orders. \
+             WARNING: Trading tools execute real trades with real funds. \
+             Always confirm trade details with the user before executing."
+                .to_string()
+        };
+
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation::from_build_env(),
-            instructions: Some(
-                "Hyperliquid MCP Server — trade perpetual futures and spot assets on Hyperliquid. \
-                 Use market data tools to check prices, order books, and funding rates. \
-                 Use account tools to view positions, balances, and trade history. \
-                 Use trading tools to place, modify, and cancel orders. \
-                 WARNING: Trading tools execute real trades with real funds. \
-                 Always confirm trade details with the user before executing."
-                    .to_string(),
-            ),
+            instructions: Some(instructions),
         }
     }
 }

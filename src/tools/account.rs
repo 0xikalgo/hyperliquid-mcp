@@ -45,11 +45,18 @@ pub async fn get_wallet_address(state: &ServerState) -> Result<CallToolResult, E
         }
     }
 
+    if let Some(vault_addr) = state.vault_address {
+        output.push_str(&format!(
+            "\nVault address (trading as vault leader): {:#x}",
+            vault_addr
+        ));
+    }
+
     Ok(CallToolResult::success(vec![Content::text(output)]))
 }
 
 pub async fn get_positions(state: &ServerState) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
+    let address = state.query_address()?;
 
     let user_state = get_cached_clearinghouse(state, address).await?;
 
@@ -132,7 +139,7 @@ pub async fn get_positions(state: &ServerState) -> Result<CallToolResult, ErrorD
 }
 
 pub async fn get_balances(state: &ServerState) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
+    let address = state.query_address()?;
 
     let user_state = get_cached_clearinghouse(state, address).await?;
 
@@ -185,7 +192,7 @@ pub async fn get_open_orders(
     state: &ServerState,
     req: GetOpenOrdersRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
+    let address = state.query_address()?;
 
     let orders = get_cached_open_orders(state, address).await?;
 
@@ -228,7 +235,7 @@ pub async fn get_trade_history(
     state: &ServerState,
     req: GetTradeHistoryRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
+    let address = state.query_address()?;
 
     let fills = state
         .client
@@ -282,7 +289,7 @@ pub async fn get_order_status(
     state: &ServerState,
     req: GetOrderStatusRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
+    let address = state.query_address()?;
 
     let update = state
         .client

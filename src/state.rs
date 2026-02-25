@@ -26,6 +26,7 @@ pub struct ServerState {
     pub builder_fee_approved: Arc<AtomicBool>,
     pub nudge_shown: Arc<AtomicBool>,
     pub cache: Arc<WsCache>,
+    pub vault_address: Option<Address>,
 }
 
 impl ServerState {
@@ -67,6 +68,40 @@ impl ServerState {
             );
         }
 
+        if let Some(vault) = config.vault_address {
+            let main_addr = config.main_address.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "HYPERLIQUID_VAULT_ADDRESS is set but no main wallet configured. \
+                     Set HYPERLIQUID_PRIVATE_KEY to trade as vault leader."
+                )
+            })?;
+
+            let details = hyperliquid::raw_info_request(
+                &http,
+                config.chain,
+                json!({
+                    "type": "vaultDetails",
+                    "vaultAddress": format!("{:#x}", vault),
+                }),
+            )
+            .await?;
+
+            let leader = details
+                .get("leader")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<Address>().ok());
+
+            anyhow::ensure!(
+                leader == Some(main_addr),
+                "Wallet {:#x} is not the leader of vault {:#x}. \
+                 Check HYPERLIQUID_VAULT_ADDRESS and HYPERLIQUID_PRIVATE_KEY configuration.",
+                main_addr,
+                vault,
+            );
+
+            tracing::info!(vault = %vault, leader = %main_addr, "Vault leader verified");
+        }
+
         let cache = if config.realtime {
             crate::ws::spawn(config.chain, user_address, http.clone())
         } else {
@@ -86,23 +121,35 @@ impl ServerState {
             builder_fee_approved: Arc::new(AtomicBool::new(false)),
             nudge_shown: Arc::new(AtomicBool::new(false)),
             cache,
+            vault_address: config.vault_address,
         })
     }
 
     pub fn require_address(&self) -> Result<Address, rmcp::model::ErrorData> {
         self.user_address.ok_or_else(|| {
             mcp_err(
-                "Authentication required. Set HYPERLIQUID_AGENT_PRIVATE_KEY environment variable.",
+                "Authentication required. Set HYPERLIQUID_PRIVATE_KEY \
+                 or HYPERLIQUID_AGENT_PRIVATE_KEY environment variable.",
             )
         })
     }
 
-    pub fn require_agent_signer(&self) -> Result<&Arc<PrivateKeySigner>, rmcp::model::ErrorData> {
-        self.agent_signer.as_ref().ok_or_else(|| {
-            mcp_err(
-                "Authentication required. Set HYPERLIQUID_AGENT_PRIVATE_KEY environment variable.",
-            )
-        })
+    /// - Vault mode → main wallet
+    /// - Normal mode → agent wallet, falling back to main wallet
+    pub fn require_signer(&self) -> Result<&Arc<PrivateKeySigner>, rmcp::model::ErrorData> {
+        if self.is_vault_mode() {
+            self.require_main_signer()
+        } else {
+            self.agent_signer
+                .as_ref()
+                .or(self.main_signer.as_ref())
+                .ok_or_else(|| {
+                    mcp_err(
+                        "Authentication required. Set HYPERLIQUID_AGENT_PRIVATE_KEY \
+                         or HYPERLIQUID_PRIVATE_KEY environment variable.",
+                    )
+                })
+        }
     }
 
     pub fn require_main_signer(&self) -> Result<&Arc<PrivateKeySigner>, rmcp::model::ErrorData> {
@@ -132,6 +179,23 @@ impl ServerState {
 
     pub fn next_nonce(&self) -> u64 {
         self.nonce.next()
+    }
+
+    pub fn vault_addr(&self) -> Option<Address> {
+        self.vault_address
+    }
+
+    pub fn query_address(&self) -> Result<Address, rmcp::model::ErrorData> {
+        self.vault_address.or(self.user_address).ok_or_else(|| {
+            mcp_err(
+                "Authentication required. Set HYPERLIQUID_PRIVATE_KEY \
+                 or HYPERLIQUID_AGENT_PRIVATE_KEY environment variable.",
+            )
+        })
+    }
+
+    pub fn is_vault_mode(&self) -> bool {
+        self.vault_address.is_some()
     }
 
     pub async fn check_and_cache_builder_approval(&self) -> bool {

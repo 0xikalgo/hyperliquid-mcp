@@ -22,12 +22,11 @@ async fn main() -> Result<()> {
 
     let mut config = config::Config::from_env()?;
 
-    // Setup flow: PRIVATE_KEY without AGENT_PRIVATE_KEY
-    if config.main_wallet.is_some() && config.wallet.is_none() {
+    if config.main_wallet.is_some() && config.wallet.is_none() && config.vault_address.is_none() {
         run_setup(&mut config).await?;
     }
 
-    if config.main_wallet.is_some() && config.wallet.is_some() {
+    if config.main_wallet.is_some() && config.wallet.is_some() && config.vault_address.is_none() {
         tracing::info!(
             "Both HYPERLIQUID_PRIVATE_KEY and HYPERLIQUID_AGENT_PRIVATE_KEY are set. \
              Using AGENT_PRIVATE_KEY for trading."
