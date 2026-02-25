@@ -13,6 +13,7 @@ pub struct Config {
     pub main_address: Option<Address>,
     pub agent_address: Option<Address>,
     pub chain: Chain,
+    pub realtime: bool,
 }
 
 pub const ENV_FILE_PATH: &str = ".config/hyperliquid-mcp/.env";
@@ -97,6 +98,13 @@ impl Config {
         };
         tracing::info!(network = network_name, "Selected network");
 
+        let realtime = std::env::var("REALTIME_ENABLED")
+            .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no" | "off"))
+            .unwrap_or(true);
+        if !realtime {
+            tracing::info!("WebSocket real-time cache disabled");
+        }
+
         let agent_address = wallet.as_ref().map(|w| w.address());
 
         Ok(Config {
@@ -105,6 +113,7 @@ impl Config {
             main_address,
             agent_address,
             chain,
+            realtime,
         })
     }
 }

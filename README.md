@@ -162,6 +162,7 @@ If no private key is provided, the server runs in read-only mode. All market dat
 | `HYPERLIQUID_AGENT_PRIVATE_KEY` | No | — | Agent wallet private key. Read-only without it. |
 | `HYPERLIQUID_PRIVATE_KEY` | No | — | Main wallet key for first-time setup (agent creation + builder fee approval). Remove after setup. |
 | `HYPERLIQUID_NETWORK` | No | `mainnet` | `mainnet` or `testnet` |
+| `REALTIME_ENABLED` | No | `true` | Set to `false` to disable WebSocket streaming and use HTTP-only |
 
 ## Security
 
