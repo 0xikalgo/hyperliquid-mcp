@@ -17,7 +17,7 @@ pub async fn transfer_between_spot_perps(
     state: &ServerState,
     req: TransferSpotPerpsRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
 
     if req.amount <= 0.0 {
         return Ok(CallToolResult::error(vec![Content::text(
@@ -198,7 +198,7 @@ pub async fn check_builder_fee(state: &ServerState) -> Result<CallToolResult, Er
     } else {
         output.push_str(
             "No wallet configured — cannot check approval status. \
-             Set HYPERLIQUID_AGENT_PRIVATE_KEY to enable trading and builder fee checks.",
+             Set HYPERLIQUID_PRIVATE_KEY or HYPERLIQUID_AGENT_PRIVATE_KEY to enable trading.",
         );
     }
 

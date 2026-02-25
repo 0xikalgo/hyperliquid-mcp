@@ -219,7 +219,7 @@ pub async fn place_order(
     state: &ServerState,
     req: PlaceOrderRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
     let asset = state.resolve_asset(&req.coin)?;
 
     let is_buy = match req.side.to_lowercase().as_str() {
@@ -294,6 +294,7 @@ pub async fn place_order(
         OrderGrouping::Na,
         Some(state.builder_info()),
         nonce,
+        state.vault_addr(),
     )
     .await
     .map_err(|e| mcp_err(&format!("Order placement failed: {e}")))?;
@@ -324,7 +325,7 @@ pub async fn cancel_order(
     state: &ServerState,
     req: CancelOrderRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
     let asset = state.resolve_asset(&req.coin)?;
 
     let cancel = Cancel {
@@ -341,7 +342,7 @@ pub async fn cancel_order(
                 cancels: vec![cancel],
             },
             nonce,
-            None,
+            state.vault_addr(),
             None,
         )
         .await
@@ -361,8 +362,8 @@ pub async fn cancel_all_orders(
     state: &ServerState,
     req: CancelAllOrdersRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let address = state.require_address()?;
-    let signer = state.require_agent_signer()?;
+    let address = state.query_address()?;
+    let signer = state.require_signer()?;
 
     let orders = state
         .client
@@ -399,7 +400,13 @@ pub async fn cancel_all_orders(
     let nonce = state.next_nonce();
     let response = state
         .client
-        .cancel(signer.as_ref(), BatchCancel { cancels }, nonce, None, None)
+        .cancel(
+            signer.as_ref(),
+            BatchCancel { cancels },
+            nonce,
+            state.vault_addr(),
+            None,
+        )
         .await
         .map_err(|e| mcp_err(&format!("Cancel all failed: {e}")))?;
 
@@ -415,7 +422,7 @@ pub async fn modify_order(
     state: &ServerState,
     req: ModifyOrderRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
     let asset = state.resolve_asset(&req.coin)?;
 
     let is_buy = match req.side.to_lowercase().as_str() {
@@ -452,7 +459,7 @@ pub async fn modify_order(
                 modifies: vec![modify],
             },
             nonce,
-            None,
+            state.vault_addr(),
             None,
         )
         .await
@@ -471,7 +478,7 @@ pub async fn set_leverage(
     state: &ServerState,
     req: SetLeverageRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
     let asset = state.resolve_asset(&req.coin)?;
     let is_cross = req.mode.as_deref().unwrap_or("cross") != "isolated";
 
@@ -484,6 +491,7 @@ pub async fn set_leverage(
         is_cross,
         req.leverage,
         nonce,
+        state.vault_addr(),
     )
     .await
     .map_err(|e| mcp_err(&format!("Update leverage failed: {e}")))?;
@@ -502,8 +510,8 @@ pub async fn close_position(
     state: &ServerState,
     req: ClosePositionRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
-    let address = state.require_address()?;
+    let signer = state.require_signer()?;
+    let address = state.query_address()?;
     let asset = state.resolve_asset(&req.coin)?;
 
     let user_state = state
@@ -564,6 +572,7 @@ pub async fn close_position(
         OrderGrouping::Na,
         Some(state.builder_info()),
         nonce,
+        state.vault_addr(),
     )
     .await
     .map_err(|e| mcp_err(&format!("Close position failed: {e}")))?;
@@ -585,7 +594,7 @@ pub async fn schedule_cancel(
     state: &ServerState,
     req: ScheduleCancelRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let signer = state.require_agent_signer()?;
+    let signer = state.require_signer()?;
 
     if req.seconds_from_now == 0 {
         return Ok(CallToolResult::error(vec![Content::text(
@@ -602,7 +611,7 @@ pub async fn schedule_cancel(
     let nonce = state.next_nonce();
     state
         .client
-        .schedule_cancel(signer.as_ref(), nonce, when, None, None)
+        .schedule_cancel(signer.as_ref(), nonce, when, state.vault_addr(), None)
         .await
         .map_err(|e| mcp_err(&format!("Schedule cancel failed: {e}")))?;
 

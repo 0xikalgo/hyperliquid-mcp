@@ -12,6 +12,7 @@ pub struct Config {
     pub main_wallet: Option<PrivateKeySigner>,
     pub main_address: Option<Address>,
     pub agent_address: Option<Address>,
+    pub vault_address: Option<Address>,
     pub chain: Chain,
     pub realtime: bool,
 }
@@ -107,11 +108,27 @@ impl Config {
 
         let agent_address = wallet.as_ref().map(|w| w.address());
 
+        let vault_address = std::env::var("HYPERLIQUID_VAULT_ADDRESS")
+            .ok()
+            .and_then(|addr| {
+                addr.trim()
+                    .parse::<Address>()
+                    .inspect_err(|e| {
+                        tracing::warn!(error = %e, "Failed to parse HYPERLIQUID_VAULT_ADDRESS");
+                    })
+                    .ok()
+            });
+
+        if let Some(vault) = vault_address {
+            tracing::info!(vault = %vault, "Vault mode enabled — trading as vault leader");
+        }
+
         Ok(Config {
             wallet,
             main_wallet,
             main_address,
             agent_address,
+            vault_address,
             chain,
             realtime,
         })

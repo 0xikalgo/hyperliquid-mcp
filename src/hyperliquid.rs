@@ -114,8 +114,9 @@ fn sign_rmp_action<S: SignerSync>(
     action: &impl Serialize,
     nonce: u64,
     chain: Chain,
+    vault_address: Option<Address>,
 ) -> anyhow::Result<SignaturePayload> {
-    let connection_id = rmp_hash(action, nonce, None)?;
+    let connection_id = rmp_hash(action, nonce, vault_address)?;
 
     let agent = Agent {
         source: chain_source(chain).to_string(),
@@ -141,6 +142,7 @@ fn sign_rmp_action<S: SignerSync>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn place_order_with_builder<S: SignerSync>(
     http: &reqwest::Client,
     chain: Chain,
@@ -149,6 +151,7 @@ pub async fn place_order_with_builder<S: SignerSync>(
     grouping: OrderGrouping,
     builder: Option<BuilderInfo>,
     nonce: u64,
+    vault_address: Option<Address>,
 ) -> anyhow::Result<Value> {
     let action = RmpAction::Order(OrderPayload {
         orders,
@@ -156,13 +159,13 @@ pub async fn place_order_with_builder<S: SignerSync>(
         builder,
     });
 
-    let signature = sign_rmp_action(signer, &action, nonce, chain)?;
+    let signature = sign_rmp_action(signer, &action, nonce, chain, vault_address)?;
 
     let request = ExchangeRequest {
         action,
         nonce,
         signature,
-        vault_address: None,
+        vault_address,
     };
 
     let url = format!("{}/exchange", base_url(chain));
@@ -171,6 +174,7 @@ pub async fn place_order_with_builder<S: SignerSync>(
     Ok(body)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_leverage<S: SignerSync>(
     http: &reqwest::Client,
     chain: Chain,
@@ -179,6 +183,7 @@ pub async fn update_leverage<S: SignerSync>(
     is_cross: bool,
     leverage: u32,
     nonce: u64,
+    vault_address: Option<Address>,
 ) -> anyhow::Result<Value> {
     let action = RmpAction::UpdateLeverage(UpdateLeveragePayload {
         asset,
@@ -186,13 +191,13 @@ pub async fn update_leverage<S: SignerSync>(
         leverage,
     });
 
-    let signature = sign_rmp_action(signer, &action, nonce, chain)?;
+    let signature = sign_rmp_action(signer, &action, nonce, chain, vault_address)?;
 
     let request = ExchangeRequest {
         action,
         nonce,
         signature,
-        vault_address: None,
+        vault_address,
     };
 
     let url = format!("{}/exchange", base_url(chain));
