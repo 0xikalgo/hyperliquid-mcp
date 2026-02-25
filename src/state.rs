@@ -8,6 +8,7 @@ use hypersdk::Address;
 use hypersdk::hypercore::{Chain, HttpClient, NonceHandler};
 use serde_json::json;
 
+use crate::cache::WsCache;
 use crate::config::{self, Config};
 use crate::hyperliquid;
 
@@ -24,6 +25,7 @@ pub struct ServerState {
     pub nonce: Arc<NonceHandler>,
     pub builder_fee_approved: Arc<AtomicBool>,
     pub nudge_shown: Arc<AtomicBool>,
+    pub cache: Arc<WsCache>,
 }
 
 impl ServerState {
@@ -65,6 +67,12 @@ impl ServerState {
             );
         }
 
+        let cache = if config.realtime {
+            crate::ws::spawn(config.chain, user_address, http.clone())
+        } else {
+            crate::ws::cache_only()
+        };
+
         Ok(ServerState {
             client: Arc::new(client),
             http,
@@ -77,6 +85,7 @@ impl ServerState {
             nonce: Arc::new(nonce),
             builder_fee_approved: Arc::new(AtomicBool::new(false)),
             nudge_shown: Arc::new(AtomicBool::new(false)),
+            cache,
         })
     }
 

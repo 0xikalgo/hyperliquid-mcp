@@ -1,7 +1,13 @@
+use std::time::Duration;
+
 use either::Either;
 use rmcp::{model::*, schemars};
 
+use crate::cache::CachedValue;
 use crate::state::{ServerState, mcp_err};
+
+const POSITIONS_TTL: Duration = Duration::from_secs(3);
+const OPEN_ORDERS_TTL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetOpenOrdersRequest {
@@ -45,11 +51,7 @@ pub async fn get_wallet_address(state: &ServerState) -> Result<CallToolResult, E
 pub async fn get_positions(state: &ServerState) -> Result<CallToolResult, ErrorData> {
     let address = state.require_address()?;
 
-    let user_state = state
-        .client
-        .clearinghouse_state(address, None)
-        .await
-        .map_err(|e| mcp_err(&format!("Failed to fetch positions: {e}")))?;
+    let user_state = get_cached_clearinghouse(state, address).await?;
 
     let positions: Vec<_> = user_state
         .asset_positions
@@ -132,11 +134,7 @@ pub async fn get_positions(state: &ServerState) -> Result<CallToolResult, ErrorD
 pub async fn get_balances(state: &ServerState) -> Result<CallToolResult, ErrorData> {
     let address = state.require_address()?;
 
-    let user_state = state
-        .client
-        .clearinghouse_state(address, None)
-        .await
-        .map_err(|e| mcp_err(&format!("Failed to fetch perp balances: {e}")))?;
+    let user_state = get_cached_clearinghouse(state, address).await?;
 
     let ms = &user_state.margin_summary;
     let available = ms.account_value - ms.total_margin_used;
@@ -189,11 +187,7 @@ pub async fn get_open_orders(
 ) -> Result<CallToolResult, ErrorData> {
     let address = state.require_address()?;
 
-    let orders = state
-        .client
-        .open_orders(address, None)
-        .await
-        .map_err(|e| mcp_err(&format!("Failed to fetch open orders: {e}")))?;
+    let orders = get_cached_open_orders(state, address).await?;
 
     let filtered: Vec<_> = if let Some(ref coin) = req.coin {
         orders
@@ -327,6 +321,54 @@ pub async fn get_order_status(
     );
 
     Ok(CallToolResult::success(vec![Content::text(output)]))
+}
+
+async fn get_cached_clearinghouse(
+    state: &ServerState,
+    address: hypersdk::Address,
+) -> Result<hypersdk::hypercore::ClearinghouseState, ErrorData> {
+    {
+        let guard = state.cache.clearinghouse_cache.read().await;
+        if let Some(cached) = guard.as_ref() {
+            if cached.is_fresh(POSITIONS_TTL) {
+                tracing::debug!("clearinghouse cache hit");
+                return Ok(cached.value.clone());
+            }
+        }
+    }
+
+    let user_state = state
+        .client
+        .clearinghouse_state(address, None)
+        .await
+        .map_err(|e| mcp_err(&format!("Failed to fetch positions: {e}")))?;
+
+    *state.cache.clearinghouse_cache.write().await = Some(CachedValue::new(user_state.clone()));
+    Ok(user_state)
+}
+
+async fn get_cached_open_orders(
+    state: &ServerState,
+    address: hypersdk::Address,
+) -> Result<Vec<hypersdk::hypercore::types::BasicOrder>, ErrorData> {
+    {
+        let guard = state.cache.open_orders_cache.read().await;
+        if let Some(cached) = guard.as_ref() {
+            if cached.is_fresh(OPEN_ORDERS_TTL) {
+                tracing::debug!("open_orders cache hit");
+                return Ok(cached.value.clone());
+            }
+        }
+    }
+
+    let orders = state
+        .client
+        .open_orders(address, None)
+        .await
+        .map_err(|e| mcp_err(&format!("Failed to fetch open orders: {e}")))?;
+
+    *state.cache.open_orders_cache.write().await = Some(CachedValue::new(orders.clone()));
+    Ok(orders)
 }
 
 fn chrono_from_ms(ms: u64) -> String {

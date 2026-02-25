@@ -2702,6 +2702,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "either",
+ "futures",
  "hypersdk",
  "reqwest 0.12.28",
  "rmcp",

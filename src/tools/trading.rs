@@ -298,6 +298,8 @@ pub async fn place_order(
     .await
     .map_err(|e| mcp_err(&format!("Order placement failed: {e}")))?;
 
+    state.cache.invalidate_user_data().await;
+
     let side_str = if is_buy { "Buy" } else { "Sell" };
     let mut output = format!("## Order Result: {side_str} {} {}", req.size, req.coin);
     if order_type_str == "market" {
@@ -344,6 +346,8 @@ pub async fn cancel_order(
         )
         .await
         .map_err(|e| mcp_err(&format!("Cancel failed: {e}")))?;
+
+    state.cache.invalidate_user_data().await;
 
     Ok(CallToolResult::success(vec![Content::text(format!(
         "Cancel order {} on {}: {}",
@@ -399,6 +403,8 @@ pub async fn cancel_all_orders(
         .await
         .map_err(|e| mcp_err(&format!("Cancel all failed: {e}")))?;
 
+    state.cache.invalidate_user_data().await;
+
     Ok(CallToolResult::success(vec![Content::text(format!(
         "Cancelled {cancel_count} orders: {}",
         format_order_response(&response)
@@ -451,6 +457,8 @@ pub async fn modify_order(
         )
         .await
         .map_err(|e| mcp_err(&format!("Modify failed: {e}")))?;
+
+    state.cache.invalidate_user_data().await;
 
     Ok(CallToolResult::success(vec![Content::text(format!(
         "Modify order {}: {}",
@@ -559,6 +567,8 @@ pub async fn close_position(
     )
     .await
     .map_err(|e| mcp_err(&format!("Close position failed: {e}")))?;
+
+    state.cache.invalidate_user_data().await;
 
     let mut output = format!(
         "## Close {} Position\n\nResult: {}",

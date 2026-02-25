@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use rmcp::{model::*, schemars};
 use serde_json::json;
 
+use crate::cache::CachedValue;
 use crate::state::{ServerState, mcp_err};
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -45,58 +48,88 @@ pub struct GetFundingRatesRequest {
     pub lookback_hours: Option<u64>,
 }
 
+const MARKET_SUMMARY_TTL: Duration = Duration::from_secs(5);
+
 pub async fn get_markets(
     state: &ServerState,
     req: GetMarketsRequest,
 ) -> Result<CallToolResult, ErrorData> {
     let market_type = req.market_type.as_deref().unwrap_or("all");
 
-    let mids = state
-        .client
-        .all_mids(None)
-        .await
-        .map_err(|e| mcp_err(&format!("Failed to fetch mid prices: {e}")))?;
+    let ws_mids = state.cache.all_mids.borrow().clone();
+    let mids = if !ws_mids.is_empty() {
+        tracing::debug!("get_markets: using WS-cached mid prices");
+        ws_mids
+    } else {
+        state
+            .client
+            .all_mids(None)
+            .await
+            .map_err(|e| mcp_err(&format!("Failed to fetch mid prices: {e}")))?
+    };
 
     let mut output = String::new();
 
     if market_type == "all" || market_type == "perp" {
-        let perps = state
-            .client
-            .perps()
-            .await
-            .map_err(|e| mcp_err(&format!("Failed to fetch perp markets: {e}")))?;
+        let meta_data = get_cached_meta(state).await?;
+        let (universe, ctxs) = parse_meta_and_ctxs(&meta_data);
 
-        output.push_str(&format!("## Perpetual Markets ({} total)\n\n", perps.len()));
-        output.push_str("| Market | Price |\n");
-        output.push_str("|--------|-------|\n");
+        let mut rows: Vec<(&str, String, f64)> = Vec::new();
+        if let Some(universe) = universe {
+            for (i, asset) in universe.iter().enumerate() {
+                let name = asset.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                let price = mids
+                    .get(name)
+                    .map(|p| format!("${p}"))
+                    .unwrap_or_else(|| "N/A".into());
+                let volume = ctxs
+                    .and_then(|c| c.get(i))
+                    .and_then(|ctx| ctx.get("dayNtlVlm"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                rows.push((name, price, volume));
+            }
+        }
+        rows.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        for asset in &perps {
-            let price = mids
-                .get(&asset.name)
-                .map(|p| format!("${p}"))
-                .unwrap_or_else(|| "N/A".into());
-            output.push_str(&format!("| {} | {} |\n", asset.name, price));
+        output.push_str(&format!("## Perpetual Markets ({} total)\n\n", rows.len()));
+        output.push_str("| Market | Price | 24h Volume |\n");
+        output.push_str("|--------|-------|------------|\n");
+        for (name, price, volume) in &rows {
+            output.push_str(&format!("| {} | {} | ${:.0} |\n", name, price, volume));
         }
         output.push('\n');
     }
 
     if market_type == "all" || market_type == "spot" {
-        let spots = state
-            .client
-            .spot()
-            .await
-            .map_err(|e| mcp_err(&format!("Failed to fetch spot markets: {e}")))?;
+        let spot_data = get_cached_spot_meta(state).await?;
+        let (universe, ctxs) = parse_meta_and_ctxs(&spot_data);
 
-        output.push_str(&format!("## Spot Markets ({} total)\n\n", spots.len()));
-        output.push_str("| Market | Price |\n");
-        output.push_str("|--------|-------|\n");
+        let mut rows: Vec<(&str, String, f64)> = Vec::new();
+        if let Some(universe) = universe {
+            for (i, asset) in universe.iter().enumerate() {
+                let name = asset.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                let price = mids
+                    .get(name)
+                    .map(|p| format!("${p}"))
+                    .unwrap_or_else(|| "N/A".into());
+                let volume = ctxs
+                    .and_then(|c| c.get(i))
+                    .and_then(|ctx| ctx.get("dayNtlVlm"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                rows.push((name, price, volume));
+            }
+        }
+        rows.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        for market in &spots {
-            let price = mids
-                .get(&market.name)
-                .map(|p| format!("${p}"))
-                .unwrap_or_else(|| "N/A".into());
-            output.push_str(&format!("| {} | {} |\n", market.name, price));
+        output.push_str(&format!("## Spot Markets ({} total)\n\n", rows.len()));
+        output.push_str("| Market | Price | 24h Volume |\n");
+        output.push_str("|--------|-------|------------|\n");
+        for (name, price, volume) in &rows {
+            output.push_str(&format!("| {} | {} | ${:.0} |\n", name, price, volume));
         }
         output.push('\n');
     }
@@ -104,13 +137,26 @@ pub async fn get_markets(
     Ok(CallToolResult::success(vec![Content::text(output)]))
 }
 
+fn parse_meta_and_ctxs(
+    data: &serde_json::Value,
+) -> (
+    Option<&Vec<serde_json::Value>>,
+    Option<&Vec<serde_json::Value>>,
+) {
+    let arr = data.as_array();
+    let universe = arr
+        .and_then(|a| a.first())
+        .and_then(|meta| meta.get("universe"))
+        .and_then(|u| u.as_array());
+    let ctxs = arr.and_then(|a| a.get(1)).and_then(|c| c.as_array());
+    (universe, ctxs)
+}
+
 pub async fn get_market_summary(
     state: &ServerState,
     req: GetMarketSummaryRequest,
 ) -> Result<CallToolResult, ErrorData> {
-    let perp_data = state
-        .raw_info_request(json!({"type": "metaAndAssetCtxs"}))
-        .await?;
+    let perp_data = get_cached_meta(state).await?;
 
     if let Some(arr) = perp_data.as_array() {
         if arr.len() == 2 {
@@ -173,9 +219,7 @@ pub async fn get_market_summary(
         }
     }
 
-    let spot_data = state
-        .raw_info_request(json!({"type": "spotMetaAndAssetCtxs"}))
-        .await?;
+    let spot_data = get_cached_spot_meta(state).await?;
 
     if let Some(arr) = spot_data.as_array() {
         if arr.len() == 2 {
@@ -223,6 +267,44 @@ pub async fn get_market_summary(
         "Market '{}' not found. Use get_markets to see available markets.",
         req.coin
     ))]))
+}
+
+async fn get_cached_meta(state: &ServerState) -> Result<serde_json::Value, ErrorData> {
+    {
+        let guard = state.cache.meta_cache.read().await;
+        if let Some(cached) = guard.as_ref() {
+            if cached.is_fresh(MARKET_SUMMARY_TTL) {
+                tracing::debug!("get_market_summary: meta cache hit");
+                return Ok(cached.value.clone());
+            }
+        }
+    }
+
+    let data = state
+        .raw_info_request(json!({"type": "metaAndAssetCtxs"}))
+        .await?;
+
+    *state.cache.meta_cache.write().await = Some(CachedValue::new(data.clone()));
+    Ok(data)
+}
+
+async fn get_cached_spot_meta(state: &ServerState) -> Result<serde_json::Value, ErrorData> {
+    {
+        let guard = state.cache.spot_meta_cache.read().await;
+        if let Some(cached) = guard.as_ref() {
+            if cached.is_fresh(MARKET_SUMMARY_TTL) {
+                tracing::debug!("get_market_summary: spot meta cache hit");
+                return Ok(cached.value.clone());
+            }
+        }
+    }
+
+    let data = state
+        .raw_info_request(json!({"type": "spotMetaAndAssetCtxs"}))
+        .await?;
+
+    *state.cache.spot_meta_cache.write().await = Some(CachedValue::new(data.clone()));
+    Ok(data)
 }
 
 pub async fn get_order_book(

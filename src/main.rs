@@ -3,11 +3,13 @@ use rmcp::{ServiceExt, transport::stdio};
 use tracing_subscriber::{self, EnvFilter};
 
 pub mod agent;
+mod cache;
 mod config;
 mod hyperliquid;
 mod server;
 mod state;
 mod tools;
+mod ws;
 
 #[tokio::main]
 async fn main() -> Result<()> {

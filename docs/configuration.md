@@ -7,6 +7,7 @@
 | `HYPERLIQUID_AGENT_PRIVATE_KEY` | No | — | Agent wallet private key (hex, with or without `0x` prefix). If not set, runs in read-only mode. |
 | `HYPERLIQUID_PRIVATE_KEY` | No | — | Master wallet private key. (hex, with or without `0x` prefix). If not set, runs in read-only mode. |
 | `HYPERLIQUID_NETWORK` | No | `mainnet` | `mainnet` or `testnet` |
+| `REALTIME_ENABLED` | No | `true` | Set to `false` to disable WebSocket streaming and use HTTP-only. |
 | `RUST_LOG` | No | — | Logging level. Set to `hyperliquid_mcp=debug` for verbose output. |
 
 ## Private Key Safety
