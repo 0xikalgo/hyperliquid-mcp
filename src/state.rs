@@ -31,13 +31,13 @@ pub struct ServerState {
 
 impl ServerState {
     pub async fn new(config: Config) -> Result<Self> {
-        let client = HttpClient::new(config.chain);
+        let client = Arc::new(HttpClient::new(config.chain));
         let http = reqwest::Client::new();
         let nonce = NonceHandler::default();
 
         let mut asset_map = HashMap::new();
 
-        match client.perps().await {
+        match hyperliquid::load_perp_markets(&client).await {
             Ok(perps) => {
                 for market in &perps {
                     asset_map.insert(market.name.clone(), market.index);
@@ -47,7 +47,7 @@ impl ServerState {
             Err(e) => tracing::warn!(error = %e, "Failed to load perp markets for asset map"),
         }
 
-        match client.spot().await {
+        match hyperliquid::load_spot_markets(&client).await {
             Ok(spots) => {
                 for market in &spots {
                     asset_map.insert(market.name.clone(), market.index);
@@ -109,7 +109,7 @@ impl ServerState {
         };
 
         Ok(ServerState {
-            client: Arc::new(client),
+            client,
             http,
             chain: config.chain,
             agent_signer: config.wallet.map(Arc::new),

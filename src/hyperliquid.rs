@@ -5,12 +5,15 @@
 //! - Builder fee approval (EIP-712 user-signed action)
 //! - Leverage updates (RMP-based L1 action)
 //! - Raw info requests (POST to /info)
+use std::sync::Arc;
+
 use alloy::dyn_abi::{Eip712Types, Resolver, TypedData};
 use alloy::primitives::{Address, B256, keccak256};
 use alloy::signers::SignerSync;
 use alloy::sol;
 use alloy::sol_types::SolStruct;
-use hypersdk::hypercore::{Chain, OrderGrouping, OrderRequest};
+use futures::FutureExt;
+use hypersdk::hypercore::{Chain, HttpClient, OrderGrouping, OrderRequest, PerpMarket, SpotMarket};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -302,4 +305,20 @@ pub async fn raw_info_request(
     let resp = http.post(&url).json(&request).send().await?;
     let body: Value = resp.json().await?;
     Ok(body)
+}
+
+pub async fn load_perp_markets(client: &Arc<HttpClient>) -> anyhow::Result<Vec<PerpMarket>> {
+    let c = client.clone();
+    match std::panic::AssertUnwindSafe(c.perps()).catch_unwind().await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow::anyhow!("panic loading perp markets")),
+    }
+}
+
+pub async fn load_spot_markets(client: &Arc<HttpClient>) -> anyhow::Result<Vec<SpotMarket>> {
+    let c = client.clone();
+    match std::panic::AssertUnwindSafe(c.spot()).catch_unwind().await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow::anyhow!("panic loading spot markets")),
+    }
 }
