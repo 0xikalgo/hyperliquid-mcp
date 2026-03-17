@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["hyperliquid", "mcp", "trading", "defi", "ai-agent"]
 categories = ["command-line-utilities", "cryptography::cryptocurrencies"]
 
+[lib]
+name = "hyperliquid_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hyperliquid-mcp"
 path = "src/main.rs"
