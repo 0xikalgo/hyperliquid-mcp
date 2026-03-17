@@ -20,6 +20,11 @@ case "$ARCH" in
   *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
+if [ "$os" = "linux" ] && [ "$arch" = "aarch64" ]; then
+  echo "Linux ARM64 binaries are not available. Use cargo install hyperliquid-mcp instead."
+  exit 1
+fi
+
 ARTIFACT="${BINARY}-${os}-${arch}"
 
 # Get latest version if not specified
